@@ -1,7 +1,7 @@
 {
   "name": "servertp",
   "version": "1.0.0",
-  "description": "Proxy server for downloading files from Yandex.Disk public folder",
+  "description": "Proxy server for downloading files from Yandex.Disk",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,6 +12,9 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
