@@ -32,6 +32,295 @@ app.use((req, res, next) => {
     next();
 });
 
+// ✅ ДОБАВЛЕНО: Главная страница сервера
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Прокси-сервер Яндекс.Диска</title>
+            <style>
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }
+                
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }
+                
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    background: white;
+                    border-radius: 15px;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+                    overflow: hidden;
+                    padding: 40px;
+                }
+                
+                header {
+                    text-align: center;
+                    margin-bottom: 40px;
+                    padding-bottom: 20px;
+                    border-bottom: 2px solid #eaeaea;
+                }
+                
+                h1 {
+                    color: #2c3e50;
+                    font-size: 2.5em;
+                    margin-bottom: 10px;
+                }
+                
+                .status-badge {
+                    display: inline-block;
+                    background: #2ecc71;
+                    color: white;
+                    padding: 5px 15px;
+                    border-radius: 20px;
+                    font-size: 0.9em;
+                    margin-left: 15px;
+                    vertical-align: middle;
+                }
+                
+                .info-section {
+                    margin-bottom: 40px;
+                }
+                
+                h2 {
+                    color: #3498db;
+                    margin-bottom: 20px;
+                    padding-bottom: 10px;
+                    border-bottom: 2px solid #3498db;
+                }
+                
+                .endpoints-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                
+                .endpoint-card {
+                    background: #f8f9fa;
+                    border-radius: 10px;
+                    padding: 25px;
+                    border-left: 4px solid #3498db;
+                    transition: transform 0.3s, box-shadow 0.3s;
+                }
+                
+                .endpoint-card:hover {
+                    transform: translateY(-5px);
+                    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+                }
+                
+                .endpoint-card h3 {
+                    color: #2c3e50;
+                    margin-bottom: 15px;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+                
+                .endpoint-method {
+                    background: #3498db;
+                    color: white;
+                    padding: 3px 10px;
+                    border-radius: 5px;
+                    font-size: 0.8em;
+                    font-weight: bold;
+                }
+                
+                .endpoint-path {
+                    font-family: monospace;
+                    background: #2c3e50;
+                    color: white;
+                    padding: 10px;
+                    border-radius: 5px;
+                    margin: 15px 0;
+                    overflow-x: auto;
+                    white-space: nowrap;
+                }
+                
+                .endpoint-desc {
+                    color: #7f8c8d;
+                    margin-bottom: 15px;
+                }
+                
+                .test-link {
+                    display: inline-block;
+                    background: #3498db;
+                    color: white;
+                    padding: 8px 15px;
+                    border-radius: 5px;
+                    text-decoration: none;
+                    font-weight: 500;
+                    transition: background 0.3s;
+                }
+                
+                .test-link:hover {
+                    background: #2980b9;
+                }
+                
+                .server-info {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                    margin-top: 30px;
+                }
+                
+                .info-item {
+                    background: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    border: 1px solid #eaeaea;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                }
+                
+                .info-label {
+                    font-size: 0.9em;
+                    color: #7f8c8d;
+                    margin-bottom: 8px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                
+                .info-value {
+                    font-weight: 600;
+                    color: #2c3e50;
+                    font-size: 1.1em;
+                }
+                
+                .footer {
+                    text-align: center;
+                    margin-top: 50px;
+                    padding-top: 20px;
+                    border-top: 1px solid #eaeaea;
+                    color: #7f8c8d;
+                    font-size: 0.9em;
+                }
+                
+                .mobile-optimized {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: #2ecc71;
+                    color: white;
+                    padding: 5px 12px;
+                    border-radius: 20px;
+                    font-size: 0.8em;
+                    margin-top: 10px;
+                }
+                
+                @media (max-width: 768px) {
+                    .container {
+                        padding: 20px;
+                    }
+                    
+                    h1 {
+                        font-size: 2em;
+                    }
+                    
+                    .endpoints-grid {
+                        grid-template-columns: 1fr;
+                    }
+                    
+                    .server-info {
+                        grid-template-columns: 1fr;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <header>
+                    <h1>Прокси-сервер Яндекс.Диска <span class="status-badge">В работе</span></h1>
+                    <p>Оптимизирован для мобильных устройств и операторов связи</p>
+                    <span class="mobile-optimized">📱 Оптимизировано для мобильных</span>
+                </header>
+                
+                <div class="info-section">
+                    <h2>📊 Основная информация</h2>
+                    <p>Этот сервер предназначен для безопасного и стабильного доступа к файлам на Яндекс.Диске через веб-приложения. Решает проблему CORS и оптимизирован для работы на мобильных устройствах.</p>
+                    
+                    <div class="server-info">
+                        <div class="info-item">
+                            <div class="info-label">Статус</div>
+                            <div class="info-value" style="color: #2ecc71;">● Активен</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Время работы</div>
+                            <div class="info-value">${process.uptime().toFixed(0)} сек</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Память</div>
+                            <div class="info-value">${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Версия Node.js</div>
+                            <div class="info-value">${process.version}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h2>🔌 Доступные эндпоинты</h2>
+                    <div class="endpoints-grid">
+                        <div class="endpoint-card">
+                            <h3><span class="endpoint-method">GET</span> Скачивание файлов</h3>
+                            <div class="endpoint-path">/download/:filename</div>
+                            <p class="endpoint-desc">Скачивание файлов с Яндекс.Диска через прокси. Поддерживает частичную загрузку, редиректы и оптимизирован для мобильных устройств.</p>
+                            <a href="/download/report.xlsx" class="test-link">Тест: report.xlsx</a>
+                        </div>
+                        
+                        <div class="endpoint-card">
+                            <h3><span class="endpoint-method">GET</span> Проверка здоровья</h3>
+                            <div class="endpoint-path">/health</div>
+                            <p class="endpoint-desc">Проверка работоспособности сервера. Возвращает информацию о состоянии, использовании памяти и конфигурации.</p>
+                            <a href="/health" class="test-link">Проверить здоровье</a>
+                        </div>
+                        
+                        <div class="endpoint-card">
+                            <h3><span class="endpoint-method">GET</span> Тест API</h3>
+                            <div class="endpoint-path">/api/test</div>
+                            <p class="endpoint-desc">Тестирование подключения к API Яндекс.Диска. Проверяет доступность и возвращает диагностическую информацию.</p>
+                            <a href="/api/test" class="test-link">Запустить тест</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h2>🚀 Особенности для мобильных</h2>
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 4px solid #2ecc71;">
+                        <ul style="margin-left: 20px; margin-top: 10px;">
+                            <li style="margin-bottom: 10px;"><strong>Fallback-серверы:</strong> 3 резервных прокси на случай блокировок оператора</li>
+                            <li style="margin-bottom: 10px;"><strong>Адаптивные таймауты:</strong> От 2 до 4 минут в зависимости от типа сети</li>
+                            <li style="margin-bottom: 10px;"><strong>Частичная загрузка:</strong> Поддержка Range-запросов для медленных соединений</li>
+                            <li style="margin-bottom: 10px;"><strong>Локальное кэширование:</strong> Сохранение файлов на 1 час для повторных загрузок</li>
+                            <li style="margin-bottom: 10px;"><strong>Автоопределение сети:</strong> Оптимизация параметров под 2G/3G/4G/5G</li>
+                            <li><strong>Обход блокировок:</strong> Автоматическое переключение при проблемах с оператором</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p>Сервер работает на <strong>Render.com</strong> | Обновлено: ${new Date().toLocaleString('ru-RU')}</p>
+                    <p>Для отдела ОРПП компании МАЙ | 2025</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
 // Класс ошибок
 class HttpError extends Error {
     constructor(message, statusCode, details = null) {
