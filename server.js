@@ -11,25 +11,28 @@ const CONFIG = {
     YANDEX_API_BASE: 'https://cloud-api.yandex.net/v1/disk/public/resources/download',
     PUBLIC_FOLDER_URL: 'https://disk.360.yandex.ru/d/ZtwhX-YtLvkxJw',
     MAX_REDIRECTS: 5,
-    REQUEST_TIMEOUT: 30000,
-    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    REQUEST_TIMEOUT: 45000, // 45 секунд для мобильных
+    USER_AGENT: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
 // Middleware
 app.use((req, res, next) => {
+    // Расширенные CORS заголовки для мобильных
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range');
+    res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+    res.header('Access-Control-Allow-Credentials', 'true');
     
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
     
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+    console.log(`${new Date().toISOString()} ${req.method} ${req.url} - User-Agent: ${req.headers['user-agent']?.substring(0, 100)}`);
     next();
 });
 
-// Вспомогательные функции
+// Класс ошибок
 class HttpError extends Error {
     constructor(message, statusCode, details = null) {
         super(message);
@@ -39,58 +42,75 @@ class HttpError extends Error {
     }
 }
 
-async function makeApiRequest(url) {
+// Функция для запросов с поддержкой редиректов
+async function makeRequest(url, options = {}) {
     return new Promise((resolve, reject) => {
         const parsedUrl = new URL(url);
         const lib = parsedUrl.protocol === 'https:' ? https : http;
         
-        const req = lib.get(url, {
-            headers: { 'User-Agent': CONFIG.USER_AGENT },
-            timeout: CONFIG.REQUEST_TIMEOUT
-        }, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
+        const reqOptions = {
+            method: options.method || 'GET',
+            headers: {
+                'User-Agent': CONFIG.USER_AGENT,
+                'Accept': 'application/json, */*',
+                ...options.headers
+            },
+            timeout: options.timeout || CONFIG.REQUEST_TIMEOUT
+        };
+        
+        const req = lib.request(url, reqOptions, (res) => {
+            const chunks = [];
+            
+            res.on('data', chunk => chunks.push(chunk));
             res.on('end', () => {
+                const data = Buffer.concat(chunks);
                 try {
-                    const result = {
+                    const text = data.toString();
+                    resolve({
                         ok: res.statusCode >= 200 && res.statusCode < 300,
                         status: res.statusCode,
                         headers: res.headers,
-                        json: () => Promise.resolve(JSON.parse(data))
-                    };
-                    resolve(result);
-                } catch (e) {
-                    reject(new HttpError(`Failed to parse response: ${e.message}`, 500));
+                        text: () => Promise.resolve(text),
+                        json: () => Promise.resolve(JSON.parse(text))
+                    });
+                } catch(e) {
+                    reject(e);
                 }
             });
         });
         
-        req.on('error', (err) => {
-            reject(new HttpError(`Request failed: ${err.message}`, 500));
-        });
-        
+        req.on('error', reject);
         req.on('timeout', () => {
             req.destroy();
-            reject(new HttpError('Request timeout', 504));
+            reject(new Error('Request timeout'));
         });
+        
+        if (options.body) {
+            req.write(options.body);
+        }
+        
+        req.end();
     });
 }
 
+// Функция для следования редиректам
 async function downloadWithRedirects(downloadUrl, maxRedirects = CONFIG.MAX_REDIRECTS) {
     let currentUrl = downloadUrl;
     let redirectCount = 0;
     
     while (redirectCount <= maxRedirects) {
-        console.log(`Download attempt ${redirectCount + 1}: ${currentUrl}`);
+        console.log(`Download attempt ${redirectCount + 1}: ${currentUrl.substring(0, 100)}...`);
         
         const response = await new Promise((resolve, reject) => {
             const parsedUrl = new URL(currentUrl);
             const lib = parsedUrl.protocol === 'https:' ? https : http;
             
             const req = lib.get(currentUrl, {
-                headers: { 'User-Agent': CONFIG.USER_AGENT },
-                timeout: CONFIG.REQUEST_TIMEOUT,
-                maxRedirects: 0 // Мы сами обрабатываем редиректы
+                headers: { 
+                    'User-Agent': CONFIG.USER_AGENT,
+                    'Accept': '*/*'
+                },
+                timeout: CONFIG.REQUEST_TIMEOUT
             }, (res) => {
                 resolve(res);
             });
@@ -106,9 +126,8 @@ async function downloadWithRedirects(downloadUrl, maxRedirects = CONFIG.MAX_REDI
                 throw new HttpError('Too many redirects', 508);
             }
             
-            console.log(`Following redirect ${response.statusCode} to: ${response.headers.location}`);
+            console.log(`Following redirect ${response.statusCode} to: ${response.headers.location.substring(0, 100)}...`);
             
-            // Обновляем URL для следующего запроса
             try {
                 currentUrl = new URL(response.headers.location, currentUrl).toString();
             } catch (e) {
@@ -131,47 +150,23 @@ async function downloadWithRedirects(downloadUrl, maxRedirects = CONFIG.MAX_REDI
     throw new HttpError('Redirect loop detected', 508);
 }
 
-// Маршруты
-app.get('/', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Yandex.Disk Proxy</title>
-            <style>
-                body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
-                code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
-                .test-link { display: inline-block; margin: 10px 0; padding: 10px 15px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
-            </style>
-        </head>
-        <body>
-            <h1>📁 Yandex.Disk Proxy Server</h1>
-            <p>Status: <strong style="color: green;">Operational ✓</strong></p>
-            <p>Use the endpoint: <code>/download/:filename</code></p>
-            <p>Example: <a class="test-link" href="/download/report.xlsx">Download report.xlsx</a></p>
-            <p>Test: <a href="/api/test">API Test</a> | <a href="/health">Health Check</a></p>
-            <hr>
-            <p><small>Server time: ${new Date().toISOString()}</small></p>
-        </body>
-        </html>
-    `);
-});
-
+// Основной маршрут загрузки
 app.get('/download/:filename', async (req, res) => {
     const filename = req.params.filename;
     const startTime = Date.now();
     
     try {
         console.log(`\n=== Starting download process for: ${filename} ===`);
+        console.log(`User-Agent: ${req.headers['user-agent']?.substring(0, 150)}`);
+        console.log(`Client IP: ${req.ip}`);
         
-        // 1. Получаем ссылку для скачивания от Яндекс.Диска
+        // 1. Получаем ссылку от Яндекс.Диска
         const encodedPublicKey = encodeURIComponent(CONFIG.PUBLIC_FOLDER_URL);
         const apiUrl = `${CONFIG.YANDEX_API_BASE}?public_key=${encodedPublicKey}&path=/${filename}`;
         
         console.log(`Step 1: Requesting download link from Yandex API`);
-        console.log(`API URL: ${apiUrl}`);
         
-        const apiResponse = await makeApiRequest(apiUrl);
+        const apiResponse = await makeRequest(apiUrl);
         
         if (!apiResponse.ok) {
             throw new HttpError('Yandex API request failed', apiResponse.status);
@@ -184,39 +179,76 @@ app.get('/download/:filename', async (req, res) => {
         }
         
         console.log(`Step 2: Got download link from Yandex`);
-        console.log(`Download URL (initial): ${apiData.href.substring(0, 100)}...`);
         
-        // 2. Скачиваем файл с обработкой редиректов
+        // 2. Скачиваем файл с редиректами
         console.log(`Step 3: Starting file download with redirect handling`);
         const fileResponse = await downloadWithRedirects(apiData.href);
         
-        // 3. Настраиваем заголовки ответа
+        // 3. Настраиваем заголовки для мобильных устройств
         res.setHeader('Content-Type', fileResponse.headers['content-type'] || 'application/octet-stream');
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // Кэш на 1 час
+        res.setHeader('Access-Control-Allow-Headers', 'Range');
+        res.setHeader('Accept-Ranges', 'bytes');
         
-        if (fileResponse.headers['content-length']) {
-            res.setHeader('Content-Length', fileResponse.headers['content-length']);
-            console.log(`File size: ${(fileResponse.headers['content-length'] / 1024 / 1024).toFixed(2)} MB`);
+        // Поддержка частичных запросов (для мобильных)
+        const range = req.headers.range;
+        const contentLength = fileResponse.headers['content-length'];
+        
+        if (range && contentLength) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
+            const chunksize = (end - start) + 1;
+            
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${contentLength}`,
+                'Content-Length': chunksize,
+            });
+            
+            // Потоковая передача части файла
+            let bytesRead = 0;
+            const chunkSize = 65536; // 64KB
+            
+            fileResponse.on('data', (chunk) => {
+                if (bytesRead >= start && bytesRead + chunk.length <= end + 1) {
+                    res.write(chunk);
+                }
+                bytesRead += chunk.length;
+            });
+            
+            fileResponse.on('end', () => {
+                res.end();
+                const duration = Date.now() - startTime;
+                console.log(`✓ Partial file ${filename} delivered (${start}-${end}) in ${duration}ms`);
+            });
+            
+        } else {
+            // Полная передача файла
+            if (contentLength) {
+                res.setHeader('Content-Length', contentLength);
+                console.log(`File size: ${(contentLength / 1024 / 1024).toFixed(2)} MB`);
+            }
+            
+            console.log(`Step 4: Streaming file to client...`);
+            fileResponse.pipe(res);
+            
+            fileResponse.on('end', () => {
+                const duration = Date.now() - startTime;
+                console.log(`✓ File ${filename} delivered successfully in ${duration}ms`);
+                console.log(`=== Download process completed ===\n`);
+            });
         }
-        
-        // 4. Потоковая передача файла
-        console.log(`Step 4: Streaming file to client...`);
-        fileResponse.pipe(res);
-        
-        fileResponse.on('end', () => {
-            const duration = Date.now() - startTime;
-            console.log(`✓ File ${filename} delivered successfully in ${duration}ms`);
-            console.log(`=== Download process completed ===\n`);
-        });
         
         fileResponse.on('error', (error) => {
             console.error(`Stream error: ${error.message}`);
             if (!res.headersSent) {
-                res.status(500).json({ error: 'Stream error', message: error.message });
+                res.status(500).json({ 
+                    error: 'Stream error', 
+                    message: error.message,
+                    code: 'STREAM_ERROR'
+                });
             }
         });
         
@@ -234,24 +266,31 @@ app.get('/download/:filename', async (req, res) => {
                 message: error.message,
                 timestamp: new Date().toISOString(),
                 filename: filename,
-                duration: `${duration}ms`
+                duration: `${duration}ms`,
+                code: error.statusCode || 'UNKNOWN_ERROR'
             });
         }
     }
 });
 
+// Маршрут для тестирования
 app.get('/api/test', async (req, res) => {
     try {
         const encodedPublicKey = encodeURIComponent(CONFIG.PUBLIC_FOLDER_URL);
         const apiUrl = `${CONFIG.YANDEX_API_BASE}?public_key=${encodedPublicKey}&path=/report.xlsx`;
         
-        const apiResponse = await makeApiRequest(apiUrl);
+        const apiResponse = await makeRequest(apiUrl, { timeout: 10000 });
         const apiData = await apiResponse.json();
         
         res.json({
             status: 'success',
-            server: 'Yandex.Disk Proxy',
+            server: 'Yandex.Disk Proxy (Mobile Optimized)',
             timestamp: new Date().toISOString(),
+            client_info: {
+                ip: req.ip,
+                user_agent: req.headers['user-agent']?.substring(0, 100),
+                accepts: req.headers['accept']
+            },
             yandex_api: {
                 url: apiUrl,
                 status: apiResponse.status,
@@ -265,26 +304,40 @@ app.get('/api/test', async (req, res) => {
             },
             config: {
                 max_redirects: CONFIG.MAX_REDIRECTS,
-                timeout: CONFIG.REQUEST_TIMEOUT
+                timeout: CONFIG.REQUEST_TIMEOUT,
+                supports_partial_content: true
             }
         });
     } catch (error) {
         res.status(500).json({
             status: 'error',
             message: error.message,
-            details: error.details
+            details: error.details,
+            code: 'API_TEST_ERROR'
         });
     }
 });
 
+// Улучшенный health check
 app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
-        service: 'yandex-disk-proxy',
+        service: 'yandex-disk-proxy-mobile',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        node_version: process.version
+        memory: {
+            rss: `${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB`,
+            heapTotal: `${(process.memoryUsage().heapTotal / 1024 / 1024).toFixed(2)} MB`,
+            heapUsed: `${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`
+        },
+        node_version: process.version,
+        features: {
+            cors: true,
+            redirect_handling: true,
+            partial_content: true,
+            mobile_optimized: true,
+            timeout: CONFIG.REQUEST_TIMEOUT
+        }
     });
 });
 
@@ -308,22 +361,24 @@ app.use((err, req, res, next) => {
     res.status(500).json({
         error: 'Internal Server Error',
         message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        code: 'INTERNAL_ERROR'
     });
 });
 
 // Запуск сервера
 app.listen(PORT, () => {
     console.log(`
-╔══════════════════════════════════════════╗
-║   Yandex.Disk Proxy Server               ║
-║   Port: ${PORT}                              ║
-║   Time: ${new Date().toISOString()}   ║
-╚══════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════╗
+║   Yandex.Disk Proxy Server (Mobile Optimized)       ║
+║   Port: ${PORT}                                          ║
+║   Time: ${new Date().toISOString()}         ║
+║   Features: CORS, Redirects, Partial Content        ║
+╚══════════════════════════════════════════════════════╝
     
 Endpoints:
   📍 /                     - Main page
-  📥 /download/:filename   - Download files
+  📥 /download/:filename   - Download files (mobile optimized)
   🧪 /api/test            - API test
   ❤️  /health             - Health check
     
